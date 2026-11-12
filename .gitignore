@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+backend/venv/
+__pycache__/
+*.pyc
+
+# Production Builds
+frontend/dist/
+
+# Local Environment & Secrets
+.env
+*.env.local
+backend/.env
+
+# System & Editor
+.DS_Store
+.vscode/
+.idea/
+

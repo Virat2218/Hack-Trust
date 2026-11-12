@@ -1,0 +1,45 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+/* Ensure accessible focus styles across all interactive elements */
+*:focus-visible {
+  outline: 2px solid #0284c7;
+  outline-offset: 2px;
+}
+
+/* Enhanced legibility for Devanagari script (Hindi) and English typography */
+body {
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Ensure proper line height for Hindi matras (accents and vowels) */
+[lang="hi"] {
+  line-height: 1.6;
+}
+
+/* Skip-to-content accessible anchor styling */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 0;
+  background: #0284c7;
+  color: white;
+  padding: 8px 16px;
+  z-index: 100;
+  transition: top 0.2s;
+  font-weight: 600;
+  font-size: 0.875rem;
+  border-radius: 0 0 8px 0;
+}
+
+.skip-link:focus {
+  top: 0;
+  outline: 2px solid white;
+}

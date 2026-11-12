@@ -1,0 +1,15 @@
+services:
+  trustshield-ai:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: trustshield-ai
+    ports:
+      - "8000:8000"
+    environment:
+      - PORT=8000
+      - HOST=0.0.0.0
+      - SAFE_BROWSING_API_KEY=${SAFE_BROWSING_API_KEY:-}
+      - FACT_CHECK_API_KEY=${FACT_CHECK_API_KEY:-}
+    restart: unless-stopped
+
