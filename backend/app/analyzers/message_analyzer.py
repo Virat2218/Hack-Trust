@@ -28,6 +28,15 @@ SUSPICIOUS_CONTACT_PATTERNS = [
     (r"\b(https?://\S+(\.top|\.xyz|\.click|\.online|\.buzz|\.club|\.info|\.cc|\.tk|\.ga|\.ml))\b", "Suspicious / Cheap TLD Link in Message", "संदिग्ध या उच्च-जोखिम डोमेन लिंक", "Message includes a link on a top-level domain frequently associated with automated scam campaigns.", "संदिग्ध शीर्ष-स्तरीय डोमेन का लिंक शामिल है जो अक्सर फ़िशिंग अभियानों में उपयोग किया जाता है।", "CRITICAL"),
 ]
 
+FINANCIAL_FRAUD_PATTERNS = [
+    (r"\b(enter\s+(your\s+)?upi\s*pin\s+to\s+receive|enter\s+pin\s+to\s+credit|refund\s+of\s+rs\.?\s*\d+|approve\s+collect\s+request|send\s+\d+\s+to\s+receive)\b", "UPI Collect / Reverse Payment Scam", "यूपीआई कलेक्ट / रिवर्स पेमेंट धोखाधड़ी", "Asks user to enter a UPI PIN or approve a request to 'receive' money or refunds. Entering a UPI PIN always deducts money, never receives it.", "पैसे या रिफंड 'पाने' के लिए यूपीआई पिन दर्ज करने या अनुरोध स्वीकार करने को कहता है। यूपीआई पिन दर्ज करने से हमेशा पैसे कटते हैं, कभी प्राप्त नहीं होते।", "CRITICAL"),
+    (r"(पैसे\s*पाने\s*के\s*लिए\s*पिन|पिन\s*डालें|रिफंड\s*पाने\s*के\s*लिए|कलेक्ट\s*रिक्वेस्ट)", "UPI PIN to Receive Money Threat (Hindi)", "पैसे प्राप्त करने के लिए पिन मांगने की धोखाधड़ी", "Misleads recipient that entering a PIN will credit money to their account.", "प्राप्तकर्ता को गुमराह करता है कि पिन दर्ज करने से उनके खाते में पैसे आएंगे।", "CRITICAL"),
+    (r"\b(earn\s+(\d+\s*[-–]\s*\d+|\d+k?)\s*(daily|per\s+day|everyday)|part\s*time\s*job|work\s*from\s*home|like\s*(youtube|yt)\s*videos?|rate\s*(google\s*maps?|hotels?|movies?)|telegram\s*(@|\bchannel|\bcontact))\b", "Part-Time Task / Telegram Job Scam", "पार्ट-टाइम टास्क / टेलीग्राम जॉब धोखाधड़ी", "Unsolicited offer promising high daily income for trivial online tasks leading to Telegram deposit schemes.", "सरल ऑनलाइन कार्यों के लिए उच्च दैनिक आय का अवांछित प्रस्ताव, जो अक्सर टेलीग्राम आधारित जमा धोखाधड़ी से जुड़ा होता है।", "CRITICAL"),
+    (r"(घर\s*बैठे\s*कमाएं|रोजाना\s*\d+|पार्ट\s*टाइम\s*(काम|जॉब)|टेलीग्राम\s*पर\s*संपर्क|वीडियो\s*लाइक\s*करके)", "Task Job Scam (Hindi)", "टास्क / जॉब धोखाधड़ी", "Prompts recipient with unrealistic part-time earnings for simple online activities.", "सरल ऑनलाइन गतिविधियों के लिए अवास्तविक दैनिक कमाई का लालच देता है।", "CRITICAL"),
+    (r"\b(package|parcel|shipment|courier|delivery)\s*(failed|blocked|suspended|on\s+hold|held\s+at\s+customs|address\s+missing|update\s+address)\b", "Fake Parcel Delivery / Customs Hold", "फर्जी पार्सल डिलीवरी / कस्टम्स रोक", "Claims an incoming delivery or courier parcel is on hold due to missing address or unpaid customs fees.", "दावा करता है कि अधूरा पता होने या सीमा शुल्क बकाया होने के कारण आने वाला पार्सल रोक दिया गया है।", "CRITICAL"),
+    (r"(पार्सल\s*(अटका|रुका|डिलीवरी\s*विफल)|कूरियर\s*रोका|पता\s*अपडेट\s*करें)", "Courier Hold Impersonation (Hindi)", "पार्सल डिलीवरी का प्रतिरूपण", "Claims courier package delivery failed to prompt clicking fraudulent update links.", "धोखाधड़ी वाले लिंक पर क्लिक करवाने के लिए पार्सल डिलीवरी विफल होने का दावा करता है।", "CRITICAL"),
+]
+
 def analyze_message_text(text: str, language: str = "en") -> AnalysisResult:
     signals: List[AnalysisSignal] = []
     lowered = text.lower()
@@ -37,6 +46,7 @@ def analyze_message_text(text: str, language: str = "en") -> AnalysisResult:
         ("IMPERSONATION", IMPERSONATION_PATTERNS),
         ("CREDENTIAL_HARVEST", CREDENTIAL_HARVEST_PATTERNS),
         ("FINANCIAL", SUSPICIOUS_CONTACT_PATTERNS),
+        ("FINANCIAL", FINANCIAL_FRAUD_PATTERNS),
     ]
 
     seen_ids = set()

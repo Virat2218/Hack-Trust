@@ -30,6 +30,26 @@ def test_hindi_claim_detection():
     assert any("Hindi" in s.label or "चमत्कारी" in s.label_hi for s in res.signals)
     print("✓ Hindi viral claim detection passed.")
 
+def test_financial_fraud_patterns():
+    # UPI collect scam
+    upi_msg = "Congratulation! Refund of Rs 4999 approved. Enter your UPI PIN to receive money in bank account."
+    res_upi = analyze_message_text(upi_msg, "en")
+    assert res_upi.risk_level in ["MEDIUM", "HIGH"]
+    assert any("UPI" in s.label for s in res_upi.signals)
+
+    # Job task scam
+    job_msg = "Earn 3000-5000 daily by liking YouTube videos and rating hotels. Contact Telegram @job_hr."
+    res_job = analyze_message_text(job_msg, "en")
+    assert res_job.risk_level in ["MEDIUM", "HIGH"]
+    assert any("Job Scam" in s.label for s in res_job.signals)
+
+    # Courier delivery scam
+    courier_msg = "Your parcel delivery failed because address is missing. Update address immediately."
+    res_courier = analyze_message_text(courier_msg, "en")
+    assert res_courier.risk_level in ["MEDIUM", "HIGH"]
+    assert any("Parcel" in s.label for s in res_courier.signals)
+    print("✓ Financial, Job & Courier scam patterns passed.")
+
 def test_edge_case_benign_content():
     # Standard benign message
     benign = "Hello Team, please find attached the meeting minutes from our morning discussion."
@@ -40,6 +60,7 @@ def test_edge_case_benign_content():
 
 if __name__ == "__main__":
     test_hindi_message_detection()
+    test_financial_fraud_patterns()
     test_url_normalization_and_casing()
     test_hindi_claim_detection()
     test_edge_case_benign_content()
