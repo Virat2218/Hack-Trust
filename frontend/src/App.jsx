@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
 import { Hero } from './components/Hero';
 import { PrivacyModal } from './components/PrivacyModal';
@@ -17,9 +17,12 @@ export const AppContent = () => {
   const [activeTab, setActiveTab] = useState('message'); // 'message' | 'url' | 'claim'
   const [isPrivacyOpen, setIsPrivacyOpen] = useState(false);
   const privacyTriggerRef = useRef(null);
+  const resultsContainerRef = useRef(null);
+  const abortControllerRef = useRef(null);
 
   // Form states
   const [inputValue, setInputValue] = useState('');
+  const [allowExternal, setAllowExternal] = useState(false);
   const [validationError, setValidationError] = useState(null);
   const [loading, setLoading] = useState(false);
   const [serverError, setServerError] = useState(null);
@@ -32,19 +35,35 @@ export const AppContent = () => {
     { id: 'claim', label: t.nav.claimTab, icon: Newspaper },
   ];
 
+  // Clean up any in-flight fetch when unmounting
+  useEffect(() => {
+    return () => {
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
   const handleTabChange = (tabId) => {
+    // 1. Abort any active in-flight request to prevent race conditions & stale results
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+
     setActiveTab(tabId);
     setInputValue('');
     setValidationError(null);
     setServerError(null);
     setResult(null);
+    setLoading(false);
   };
 
   const handleReset = () => {
+    abortControllerRef.current?.abort();
+    abortControllerRef.current = null;
+
     setInputValue('');
     setValidationError(null);
     setServerError(null);
     setResult(null);
+    setLoading(false);
   };
 
   const handleSelectExample = (text) => {
@@ -102,16 +121,26 @@ export const AppContent = () => {
 
     if (!isValid) return;
 
-    // 2. Execute analysis request
+    // 2. Abort prior in-flight request and instantiate new AbortController
+    abortControllerRef.current?.abort();
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+
     setLoading(true);
     try {
       const endpoint = `/api/analyze/${activeTab}`;
-      const payload = activeTab === 'url' ? { url: sanitized, language: lang } : { text: sanitized, language: lang };
+      const payload = {
+        text: sanitized,
+        url: sanitized,
+        language: lang,
+        allow_external_lookup: allowExternal,
+      };
 
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
 
       if (!response.ok) {
@@ -121,11 +150,20 @@ export const AppContent = () => {
 
       const data = await response.json();
       setResult(data);
+
+      // Smoothly scroll and focus results for keyboard & screen-reader users
+      setTimeout(() => {
+        resultsContainerRef.current?.focus();
+      }, 100);
     } catch (err) {
+      if (err.name === 'AbortError') {
+        // Fetch was aborted cleanly by user action (tab switch or reset); do not set error state
+        return;
+      }
       setServerError(
         lang === 'hi'
-          ? `बैकएंड विश्लेषण सेवा से संपर्क नहीं हो सका (${err.message})। कृपया सुनिश्चित करें कि बैकएंड पोर्ट 8000 पर चल रहा है।`
-          : `Unable to connect to analysis backend (${err.message}). Ensure the backend is active on port 8000.`
+          ? `विश्लेषण सेवा से संपर्क नहीं हो सका (${err.message})। कृपया कनेक्शन जांचें।`
+          : `Unable to connect to analysis service (${err.message}). Please check connection.`
       );
     } finally {
       setLoading(false);
@@ -136,7 +174,7 @@ export const AppContent = () => {
     <div className="min-h-screen flex flex-col bg-slate-50 text-slate-900">
       {/* Skip to Main Content Link for Keyboard and Screen Reader Accessibility */}
       <a href="#main-content" className="skip-link">
-        {lang === 'hi' ? 'मुख्य सामग्री पर जाएं' : 'Skip to main content'}
+        {t.nav.skipLink}
       </a>
 
       <Navbar
@@ -194,14 +232,20 @@ export const AppContent = () => {
             onReset={handleReset}
             loading={loading}
             validationError={validationError}
+            allowExternal={allowExternal}
+            onToggleExternal={setAllowExternal}
           />
 
           {/* Results / Status Area */}
           {loading && <LoadingState />}
           {serverError && <ErrorState message={serverError} onRetry={handleAnalyze} />}
+          
           {!loading && !serverError && result && (
-            <ResultsCard result={result} onReset={handleReset} />
+            <div ref={resultsContainerRef} tabIndex={-1} className="focus:outline-none">
+              <ResultsCard result={result} onReset={handleReset} />
+            </div>
           )}
+          
           {!loading && !serverError && !result && (
             <EmptyState activeTab={activeTab} onSelectExample={handleSelectExample} />
           )}

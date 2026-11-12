@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timezone
-from typing import List
-from app.schemas import AnalysisResult, AnalysisSignal, ProviderStatus
+from typing import List, Optional
+from app.schemas import AnalysisResult, AnalysisSignal, ProviderStatus, EvidenceItem
 from app.providers.fact_check import FactCheckProvider
 
 VIRAL_SENSATIONAL_PATTERNS = [
@@ -19,10 +19,14 @@ VAGUE_AUTHORITY_PATTERNS = [
     (r"(नासा\s*ने\s*कहा|यूनेस्को\s*ने\s*घोषित\s*किया|डॉक्टरों\s*का\s*मानना)", "Unverified Authority Appeal (Hindi)", "संस्था का नाम लेकर भ्रामक दावा", "Mentions respected bodies without verifiable press releases.", "बिना किसी प्रेस विज्ञप्ति के प्रतिष्ठित संस्थाओं का नाम लेता है।", "WARNING"),
 ]
 
-def analyze_claim_text(text: str, language: str = "en") -> AnalysisResult:
+def analyze_claim_text(
+    text: str,
+    language: str = "en",
+    allow_external_lookup: bool = False
+) -> AnalysisResult:
     signals: List[AnalysisSignal] = []
+    evidence_items: List[EvidenceItem] = []
     lowered = text.lower()
-    score_accumulator = 0
 
     all_groups = [
         ("UNVERIFIED_SOURCE", VIRAL_SENSATIONAL_PATTERNS),
@@ -45,42 +49,77 @@ def analyze_claim_text(text: str, language: str = "en") -> AnalysisResult:
                         description_hi=desc_hi,
                         severity=severity,
                     ))
-                    if severity == "CRITICAL":
-                        score_accumulator += 40
-                    elif severity == "WARNING":
-                        score_accumulator += 25
-                    else:
-                        score_accumulator += 10
+
+    evidence_items.append(EvidenceItem(
+        source_name="Local Viral & Claim Indicator Engine",
+        status="ACTIVE",
+        checked_target="Submitted Claim Statement",
+        details=f"Evaluated against viral urgency, miracle cures, and unverified authority appeal rules ({len(signals)} matching signals found).",
+        details_hi=f"वायरल दबाव, चमत्कारी इलाज और असत्यापित संदर्भ नियमों के विरुद्ध जांच की गई ({len(signals)} संकेत मिले)।"
+    ))
 
     # Provider statuses: Local Heuristics + Fact Check API
     provider_statuses = [
         ProviderStatus(name="Local Viral & Claim Indicator Engine", configured=True, status="ACTIVE")
     ]
 
-    # External Fact Check Provider
+    # External Fact Check Provider (Queried ONLY if user opt-in is granted)
     fc_provider = FactCheckProvider()
-    fc_result = fc_provider.check(text, language=language)
-    provider_statuses.append(fc_result.provider_status)
-    if fc_result.signals:
-        signals.extend(fc_result.signals)
-        score_accumulator += fc_result.additional_score
+    if not allow_external_lookup:
+        provider_statuses.append(ProviderStatus(
+            name="Google Fact Check Tools API",
+            configured=fc_provider.is_configured(),
+            status="CONSENT_WITHHELD",
+            details="External fact-check query skipped per privacy settings; analyzed locally."
+        ))
+        evidence_items.append(EvidenceItem(
+            source_name="Google Fact Check Tools API",
+            status="CONSENT_WITHHELD",
+            checked_target=text[:80],
+            details="External fact-check lookup was skipped because external lookups were not enabled. Local claim indicators were used.",
+            details_hi="गोपनीयता सेटिंग्स के कारण बाहरी फैक्ट-चेक जांच छोड़ दी गई। केवल स्थानीय विश्लेषण लागू किया गया।"
+        ))
+    else:
+        fc_result = fc_provider.check(text, language=language)
+        provider_statuses.append(fc_result.provider_status)
+        if fc_result.signals:
+            signals.extend(fc_result.signals)
+        md = fc_result.matched_data or {}
+        evidence_items.append(EvidenceItem(
+            source_name="Google Fact Check Tools API",
+            status=fc_result.provider_status.status,
+            checked_target=text[:80],
+            details=fc_result.provider_status.details or "Queried indexed fact-checks.",
+            publisher=md.get("publisher"),
+            review_url=md.get("review_url"),
+            review_date=md.get("review_date"),
+            textual_rating=md.get("rating"),
+            reviewed_claim=md.get("reviewed_claim"),
+            match_confidence=md.get("match_confidence")
+        ))
 
-    risk_score = min(score_accumulator, 95)
-    if not signals:
-        risk_score = 15
+    # Tally signal severities
+    crit_count = sum(1 for s in signals if s.severity == "CRITICAL")
+    warn_count = sum(1 for s in signals if s.severity == "WARNING")
+    info_count = sum(1 for s in signals if s.severity == "INFO")
 
-    if risk_score >= 60:
+    if crit_count >= 1:
         risk_level = "HIGH"
-        summary = "Multiple high-risk viral misinformation indicators detected (unverified miracle cures, false government schemes, or sensational pressure)."
-        summary_hi = "वायरल भ्रामक सूचना के कई उच्च संकेत मिले हैं (असत्यापित चमत्कारी इलाज, फर्जी सरकारी योजनाएं या सनसनीखेज दबाव)।"
-    elif risk_score >= 30:
+        summary = f"High risk viral misinformation indicators detected ({crit_count} critical signal{'s' if crit_count != 1 else ''}). Content matches patterns of unverified miracle cures, fake government schemes, or high-pressure viral claims."
+        summary_hi = f"वायरल भ्रामक सूचना के कई उच्च संकेत मिले हैं ({crit_count} गंभीर संकेत)। सामग्री असत्यापित चमत्कारी इलाज या फर्जी सरकारी योजनाओं के पैटर्न से मेल खाती है।"
+    elif warn_count >= 1:
         risk_level = "MEDIUM"
-        summary = "Notable unverified claim indicators found. The statement lacks primary publisher citations or institutional verification."
-        summary_hi = "कुछ असत्यापित संकेत पाए गए हैं। इस कथन में प्राथमिक प्रकाशक या आधिकारिक संदर्भ का अभाव है।"
+        summary = f"Caution recommended ({warn_count} warning indicator{'s' if warn_count != 1 else ''}). The claim contains forwarding pressure or vague appeals to authority without primary citations."
+        summary_hi = f"सावधानी की सलाह दी जाती है ({warn_count} चेतावनी संकेत)। कथन में बिना प्राथमिक संदर्भ के संस्थाओं का नाम या शेयर करने का दबाव है।"
     else:
         risk_level = "LOW"
-        summary = "Standard assertion phrasing. No blatant sensationalist or viral forwarding cues detected."
-        summary_hi = "सामान्य कथन भाषा पाई गई। कोई स्पष्ट सनसनीखेज या भ्रामक संकेत नहीं मिले।"
+        summary = "Standard assertion phrasing. No blatant sensationalist or viral forwarding cues detected. A low signal level is not proof that the statement is factual."
+        summary_hi = "सामान्य कथन भाषा पाई गई। कोई स्पष्ट सनसनीखेज संकेत नहीं मिले। कम जोखिम का स्तर यह साबित नहीं करता कि दावा सत्य है।"
+
+    # Internal heuristic index for backward-compatible test assertions
+    heuristic_index = min((crit_count * 40) + (warn_count * 25) + (info_count * 10), 95)
+    if not signals:
+        heuristic_index = 15
 
     uncertainty_notes = [
         "TrustShield AI evaluates linguistic indicators and claim patterns; it cannot arbitrate factual historical truth.",
@@ -107,14 +146,18 @@ def analyze_claim_text(text: str, language: str = "en") -> AnalysisResult:
     return AnalysisResult(
         analysis_type="CLAIM",
         risk_level=risk_level,
-        risk_score=risk_score,
+        critical_signals_count=crit_count,
+        warning_signals_count=warn_count,
+        info_signals_count=info_count,
         summary=summary,
         summary_hi=summary_hi,
         signals=signals,
+        evidence=evidence_items,
         provider_statuses=provider_statuses,
         uncertainty_notes=uncertainty_notes,
         uncertainty_notes_hi=uncertainty_notes_hi,
         recommended_actions=recommended_actions,
         recommended_actions_hi=recommended_actions_hi,
-        timestamp=datetime.now(timezone.utc).isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        risk_score=heuristic_index
     )

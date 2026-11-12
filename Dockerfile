@@ -17,8 +17,9 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PORT=8000
 ENV HOST=0.0.0.0
+ENV PYTHONPATH=/app/backend
 
-# Install dependencies
+# Install backend dependencies
 COPY backend/requirements.txt ./backend/
 RUN pip install --no-cache-dir -r ./backend/requirements.txt
 
@@ -28,13 +29,16 @@ COPY backend/app ./backend/app
 # Copy built frontend assets from stage 1 into production directory
 COPY --from=frontend-builder /build/dist ./frontend/dist
 
+# Non-root user for container security
+RUN useradd -m -u 1000 appuser && chown -R appuser:appuser /app
+USER appuser
+
 # Expose server port
 EXPOSE 8000
 
-# Non-root user for container security
-RUN useradd -m appuser && chown -R appuser /app
-USER appuser
+# Health check using standard Python urllib (no external curl package needed)
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')" || exit 1
 
 WORKDIR /app/backend
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
-

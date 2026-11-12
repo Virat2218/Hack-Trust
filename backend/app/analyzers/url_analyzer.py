@@ -3,8 +3,8 @@ import socket
 import ipaddress
 from datetime import datetime, timezone
 from urllib.parse import urlparse
-from typing import List, Tuple
-from app.schemas import AnalysisResult, AnalysisSignal, ProviderStatus
+from typing import List, Tuple, Optional
+from app.schemas import AnalysisResult, AnalysisSignal, ProviderStatus, EvidenceItem
 from app.providers.safe_browsing import SafeBrowsingProvider
 
 HIGH_RISK_TLDS = {
@@ -24,32 +24,24 @@ def is_forbidden_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast or ip.is_reserved or ip.is_unspecified:
         return True
     ip_str = str(ip)
-    # Cloud metadata (AWS, GCP, Azure, OpenStack)
     if ip_str == "169.254.169.254" or ip_str == "100.100.100.200":
         return True
-    # 0.0.0.0/8
     if isinstance(ip, ipaddress.IPv4Address) and ip.exploded.startswith("0."):
         return True
     return False
 
 def check_ssrf_strict(hostname: str) -> Tuple[bool, str]:
-    """
-    Validates hostname against SSRF bypass techniques:
-    Decimal, octal, hex, IPv6 bracketed, and standard DNS resolution.
-    """
     if not hostname:
         return False, "Empty or missing hostname."
 
     clean_host = hostname.strip().strip("[]").lower()
 
-    # Block well-known internal hostnames directly
     if clean_host in {"localhost", "localhost.localdomain", "metadata.google.internal"}:
         return False, "Target is a forbidden local hostname."
 
     if clean_host.endswith(".local") or clean_host.endswith(".internal") or clean_host.endswith(".localhost"):
         return False, "Target is an internal or local top-level domain."
 
-    # Try parsing direct IP (handles standard decimal dotted-quad, single integer, etc.)
     try:
         parsed_ip = ipaddress.ip_address(clean_host)
         if is_forbidden_ip(parsed_ip):
@@ -58,7 +50,6 @@ def check_ssrf_strict(hostname: str) -> Tuple[bool, str]:
     except ValueError:
         pass
 
-    # Try resolving via DNS safely
     try:
         addr_info = socket.getaddrinfo(clean_host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
         for entry in addr_info:
@@ -71,27 +62,92 @@ def check_ssrf_strict(hostname: str) -> Tuple[bool, str]:
                 return False, f"Invalid IP returned by DNS: '{candidate_str}'"
         return True, "Public DNS"
     except socket.gaierror:
-        # Domain does not currently resolve via DNS
         return True, "Unresolvable DNS"
     except Exception as e:
         return False, f"DNS resolution error: {str(e)}"
 
-def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
+def validate_and_parse_url(raw_url: str) -> Tuple[str, str, str]:
+    """
+    Validates that raw_url is a valid HTTP or HTTPS URL, rejecting malformed URLs,
+    unsupported schemes, and credentials in the authority section.
+    Returns (normalized_url, hostname, scheme).
+    Raises ValueError with a user-facing explanation on security or syntax violation.
+    """
+    if not raw_url or not isinstance(raw_url, str):
+        raise ValueError("URL cannot be empty.")
+    
+    cleaned = raw_url.strip()
+    if not cleaned:
+        raise ValueError("URL cannot be empty or blank.")
+        
+    if len(cleaned) > 1000:
+        raise ValueError("URL exceeds maximum permitted length of 1000 characters.")
+
+    # Check for forbidden control characters or internal whitespace
+    if re.search(r"[\s\x00-\x1f\x7f]", cleaned):
+        raise ValueError("Invalid URL: contains spaces or unprintable control characters.")
+
+    # Reject credentials in authority section (e.g., user:pass@host or user@host)
+    authority_section = cleaned.split("://", 1)[1].split("/")[0] if "://" in cleaned else cleaned.split("/")[0]
+    if "@" in authority_section:
+        raise ValueError("URLs containing embedded credentials (user:password@) are rejected for security reasons.")
+
+    # Check for explicit scheme (e.g., http://, ftp://, javascript:, file://, etc.)
+    scheme_match = re.match(r"^([a-zA-Z][a-zA-Z0-9+.-]*)://", cleaned)
+    if scheme_match:
+        scheme = scheme_match.group(1).lower()
+        if scheme not in {"http", "https"}:
+            raise ValueError(f"Unsupported URL protocol '{scheme}://'. TrustShield accepts only HTTP and HTTPS links.")
+        url_to_parse = cleaned
+    else:
+        # Check if URL starts with a scheme like javascript: or mailto: or data: without //
+        non_slashed_scheme = re.match(r"^([a-zA-Z][a-zA-Z0-9+.-]*):", cleaned)
+        if non_slashed_scheme and non_slashed_scheme.group(1).lower() not in {"http", "https"}:
+            raise ValueError(f"Unsupported URL scheme '{non_slashed_scheme.group(1)}:'. TrustShield accepts only HTTP and HTTPS links.")
+        scheme = "https"
+        url_to_parse = f"https://{cleaned}"
+
+    parsed = urlparse(url_to_parse)
+
+    # Secondary check on parsed authority
+    if parsed.username or parsed.password or ("@" in parsed.netloc):
+        raise ValueError("URLs containing embedded credentials (user:password@) are rejected for security reasons.")
+
+    hostname = (parsed.hostname or "").lower()
+    if not hostname:
+        raise ValueError("Malformed URL: missing valid destination hostname.")
+
+    # Validate hostname structure
+    if hostname.startswith(".") or hostname.endswith(".") or ".." in hostname:
+        raise ValueError("Malformed URL: destination hostname has invalid label structure.")
+    
+    if len(hostname) > 253:
+        raise ValueError("Malformed URL: hostname exceeds maximum length of 253 characters.")
+
+    return url_to_parse, hostname, scheme
+
+def analyze_url_target(
+    raw_url: str,
+    language: str = "en",
+    allow_external_lookup: bool = False
+) -> AnalysisResult:
+    # 1. Strict URL validation & normalization (rejects malformed URLs, credentials, non-HTTP/HTTPS schemes)
+    url_to_parse, hostname, scheme = validate_and_parse_url(raw_url)
+    parsed = urlparse(url_to_parse)
+
+    # SERVER-SIDE FETCHING POLICY:
+    # TrustShield AI deliberately keeps server-side URL content fetching DISABLED.
+    # We do NOT execute HTTP GET/POST or scrape arbitrary user-submitted URLs.
+    # Analysis is purely structural (domain, TLD, SSL scheme, SSRF boundaries, Punycode,
+    # and reputation via Safe Browsing if explicitly consented).
+
     signals: List[AnalysisSignal] = []
-    score_accumulator = 0
+    evidence_items: List[EvidenceItem] = []
     provider_statuses: List[ProviderStatus] = [
         ProviderStatus(name="Local Domain Structure & SSRF Engine", configured=True, status="ACTIVE")
     ]
 
-    # Prepend scheme if omitted
-    url_to_parse = raw_url.strip()
-    if not re.match(r"^https?://", url_to_parse, re.IGNORECASE):
-        url_to_parse = "https://" + url_to_parse
-
-    parsed = urlparse(url_to_parse)
-    hostname = (parsed.hostname or "").lower()
-
-    # 1. SSRF Safety Check
+    # 2. SSRF Safety Check
     is_safe, ssrf_msg = check_ssrf_strict(hostname)
     if not is_safe:
         signals.append(AnalysisSignal(
@@ -103,35 +159,28 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
             description_hi=f"आंतरिक नेटवर्क सुरक्षा: यह पता निजी या प्रतिबंधित नेटवर्क को इंगित करता है।",
             severity="CRITICAL"
         ))
-        score_accumulator += 85
 
-    # 2. Scheme checks
+    evidence_items.append(EvidenceItem(
+        source_name="Local Domain Structure & SSRF Engine",
+        status="ACTIVE" if is_safe else "ERROR",
+        checked_target=hostname or raw_url,
+        details="Verified against SSRF private network boundaries, punycode spoofing, and brand mimicry." if is_safe else f"Blocked: {ssrf_msg}",
+        details_hi="निजी नेटवर्क सीमा, प्यूनिकोड धोखाधड़ी और ब्रांड नकल के विरुद्ध जांच की गई।" if is_safe else f"प्रतिबंधित: {ssrf_msg}"
+    ))
+
+    # 3. Scheme check (HTTP is unencrypted warning, not definitive fraud)
     if parsed.scheme.lower() == "http":
         signals.append(AnalysisSignal(
             id="insecure_scheme",
             category="DOMAIN_ANOMALY",
             label="Unencrypted Connection (HTTP)",
             label_hi="असुरक्षित कनेक्शन (HTTP)",
-            description="The URL uses unencrypted HTTP instead of HTTPS, leaving transmitted credentials vulnerable to interception.",
-            description_hi="यह लिंक सुरक्षित HTTPS के बजाय अप्रतिबंधित HTTP का उपयोग करता है, जिससे डेटा चोरी हो सकता है।",
+            description="The URL uses unencrypted HTTP instead of HTTPS. While common on older sites, transmitted data lacks cryptographic protection.",
+            description_hi="यह लिंक सुरक्षित HTTPS के बजाय अप्रतिबंधित HTTP का उपयोग करता है। प्रेषित डेटा सुरक्षित नहीं है।",
             severity="WARNING"
         ))
-        score_accumulator += 15
 
-    # 3. Userinfo / At-sign deception
-    if "@" in raw_url:
-        signals.append(AnalysisSignal(
-            id="userinfo_at_sign",
-            category="DOMAIN_ANOMALY",
-            label="URL Authentication Deception (@ Symbol)",
-            label_hi="भ्रामक URL संरचना (@ प्रतीक का उपयोग)",
-            description="The URL uses '@' syntax to mislead users into believing they are visiting the domain listed before the '@'.",
-            description_hi="यह लिंक '@' प्रतीक का उपयोग करके भ्रमित करता है ताकि वास्तविक डोमेन छिप सके।",
-            severity="CRITICAL"
-        ))
-        score_accumulator += 40
-
-    # 4. Raw IP as hostname
+    # 4. Raw numeric IP as hostname
     if re.match(r"^\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}$", hostname):
         signals.append(AnalysisSignal(
             id="raw_ip_host",
@@ -142,7 +191,6 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
             description_hi="वैध वेबसाइटें सीधे संख्यात्मक आईपी पते के बजाय पंजीकृत डोमेन नाम का उपयोग करती हैं।",
             severity="CRITICAL"
         ))
-        score_accumulator += 35
 
     # 5. Punycode / IDN Homoglyph detection
     if "xn--" in hostname:
@@ -151,13 +199,12 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
             category="DOMAIN_ANOMALY",
             label="Punycode / Homoglyph Domain Encoding",
             label_hi="प्यूनिकोड / समरूप वर्ण डोमेन (Punycode)",
-            description="The domain uses Punycode encoding (xn--), which can be used to impersonate famous brands with lookalike foreign characters.",
-            description_hi="डोमेन प्यूनिकोड एन्कोडिंग का उपयोग करता है, जिसका उपयोग अक्सर ब्रांडों की नकली वेबसाइट बनाने के लिए किया जाता है।",
+            description="The domain uses Punycode encoding (xn--), which can disguise lookalike international characters to impersonate legitimate brand domains.",
+            description_hi="डोमेन प्यूनिकोड एन्कोडिंग का उपयोग करता है, जिससे ब्रांड की नकली वेबसाइट बनाई जा सकती है।",
             severity="CRITICAL"
         ))
-        score_accumulator += 35
 
-    # 6. High-risk TLD
+    # 6. High-risk TLD (Warning, not definitive proof by itself)
     tld = hostname.split(".")[-1] if "." in hostname else ""
     if tld in HIGH_RISK_TLDS:
         signals.append(AnalysisSignal(
@@ -165,11 +212,10 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
             category="DOMAIN_ANOMALY",
             label=f"High-Risk / Low-Cost Top Level Domain (.{tld})",
             label_hi=f"उच्च-जोखिम वाला शीर्ष-स्तरीय डोमेन (.{tld})",
-            description=f"The domain ends in '.{tld}', a top-level domain frequently utilized in automated phishing campaigns.",
+            description=f"The domain ends in '.{tld}', a low-cost top-level domain frequently associated with disposable phishing infrastructure.",
             description_hi=f"डोमेन '.{tld}' पर समाप्त होता है, जिसका उपयोग अक्सर फ़िशिंग अभियानों में किया जाता है।",
             severity="WARNING"
         ))
-        score_accumulator += 25
 
     # 7. URL Shortener detection
     if hostname in KNOWN_SHORTENERS:
@@ -178,13 +224,12 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
             category="DOMAIN_ANOMALY",
             label="URL Shortener Obscuring Destination",
             label_hi="शॉर्टनर लिंक (वास्तविक गंतव्य छिपा हुआ है)",
-            description="This link uses a shortening service that hides the real destination domain until clicked.",
+            description="This link uses a shortening service that obscures the real destination host until visited.",
             description_hi="यह लिंक एक शॉर्टनर सेवा का उपयोग करता है जो क्लिक करने तक वास्तविक वेबसाइट को छिपाए रखता है।",
             severity="WARNING"
         ))
-        score_accumulator += 20
 
-    # 8. Brand Mimicry in Subdomain / Path
+    # 8. Brand Mimicry in Subdomain
     parts = hostname.split(".")
     domain_root = ".".join(parts[-2:]) if len(parts) >= 2 else hostname
     for brand in TARGETED_BRANDS:
@@ -198,7 +243,6 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
                 description_hi=f"लिंक के सबडोमेन में '{brand}' शामिल है, लेकिन वास्तविक मुख्य डोमेन '{domain_root}' है।",
                 severity="CRITICAL"
             ))
-            score_accumulator += 40
             break
 
     # 9. Excessive Subdomain Stacking
@@ -212,34 +256,58 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
             description_hi=f"डोमेन में {len(parts)} स्तर हैं, जिसका उपयोग मोबाइल स्क्रीन पर असली डोमेन छिपाने के लिए किया जाता है।",
             severity="INFO"
         ))
-        score_accumulator += 10
 
-    # 10. External Provider: Google Safe Browsing (Executed only if URL passed SSRF validation)
-    if is_safe:
-        sb_provider = SafeBrowsingProvider()
+    # 10. External Provider: Google Safe Browsing (Executed ONLY if SSRF safe AND user opt-in is granted)
+    sb_provider = SafeBrowsingProvider()
+    if not allow_external_lookup:
+        provider_statuses.append(ProviderStatus(
+            name="Google Safe Browsing API v4",
+            configured=sb_provider.is_configured(),
+            status="CONSENT_WITHHELD",
+            details="External reputation lookup skipped per privacy settings; analyzed locally."
+        ))
+        evidence_items.append(EvidenceItem(
+            source_name="Google Safe Browsing API v4",
+            status="CONSENT_WITHHELD",
+            checked_target=hostname or raw_url,
+            details="External reputation query was skipped because external lookups were not enabled. Local heuristics were used.",
+            details_hi="गोपनीयता सेटिंग्स के कारण बाहरी जांच छोड़ दी गई। केवल स्थानीय विश्लेषण लागू किया गया।"
+        ))
+    elif is_safe:
         sb_result = sb_provider.check(url_to_parse)
         provider_statuses.append(sb_result.provider_status)
         if sb_result.signals:
             signals.extend(sb_result.signals)
-            score_accumulator += sb_result.additional_score
+        evidence_items.append(EvidenceItem(
+            source_name="Google Safe Browsing API v4",
+            status=sb_result.provider_status.status,
+            checked_target=hostname or raw_url,
+            details=sb_result.provider_status.details or "Queried Safe Browsing blocklist."
+        ))
 
-    # Calculate final score
-    risk_score = min(score_accumulator, 95)
-    if not signals:
-        risk_score = 12
+    # Tally signal severities
+    crit_count = sum(1 for s in signals if s.severity == "CRITICAL")
+    warn_count = sum(1 for s in signals if s.severity == "WARNING")
+    info_count = sum(1 for s in signals if s.severity == "INFO")
 
-    if risk_score >= 60:
+    # Calibrated risk level
+    if crit_count >= 1:
         risk_level = "HIGH"
-        summary = f"High risk indicators detected on destination '{hostname}'. Suspicious domain structure or deceptive patterns found."
-        summary_hi = f"गंतव्य '{hostname}' पर उच्च जोखिम के संकेत मिले हैं। संदिग्ध डोमेन संरचना या भ्रामक पैटर्न पाए गए।"
-    elif risk_score >= 30:
+        summary = f"High risk indicators detected on destination '{hostname}' ({crit_count} critical signal{'s' if crit_count != 1 else ''}). Significant deceptive patterns or security restrictions discovered."
+        summary_hi = f"गंतव्य '{hostname}' पर उच्च जोखिम के संकेत मिले हैं ({crit_count} गंभीर संकेत)। भ्रामक पैटर्न या सुरक्षा प्रतिबंध पाए गए।"
+    elif warn_count >= 1:
         risk_level = "MEDIUM"
-        summary = f"Notable caution indicators found on '{hostname}'. Verify the root domain carefully before visiting."
-        summary_hi = f"'{hostname}' पर कुछ सावधानी के संकेत मिले हैं। वेबसाइट खोलने से पहले मुख्य डोमेन की अच्छी तरह जांच करें।"
+        summary = f"Caution recommended on '{hostname}' ({warn_count} warning indicator{'s' if warn_count != 1 else ''}). Verify the registering domain carefully before proceeding."
+        summary_hi = f"'{hostname}' पर सावधानी की सलाह दी जाती है ({warn_count} चेतावनी संकेत)। आगे बढ़ने से पहले मुख्य डोमेन की जांच करें।"
     else:
         risk_level = "LOW"
-        summary = f"Standard domain structure observed for '{hostname}'. No overt spoofing cues detected."
-        summary_hi = f"'{hostname}' के लिए सामान्य डोमेन संरचना पाई गई। कोई प्रत्यक्ष धोखाधड़ी संकेत नहीं मिले।"
+        summary = f"Standard domain structure observed for '{hostname}'. No overt spoofing cues detected. A low signal level is not proof that the destination is safe."
+        summary_hi = f"'{hostname}' के लिए सामान्य डोमेन संरचना पाई गई। कोई प्रत्यक्ष धोखाधड़ी संकेत नहीं मिले। कम जोखिम का स्तर साइट के सुरक्षित होने की गारंटी नहीं है।"
+
+    # Internal heuristic index for backward-compatible test assertions
+    heuristic_index = min((crit_count * 40) + (warn_count * 20) + (info_count * 10), 95)
+    if not signals:
+        heuristic_index = 12
 
     uncertainty_notes = [
         "Brand-new phishing sites registered minutes ago may not yet appear on public blocklists.",
@@ -266,14 +334,18 @@ def analyze_url_target(raw_url: str, language: str = "en") -> AnalysisResult:
     return AnalysisResult(
         analysis_type="URL",
         risk_level=risk_level,
-        risk_score=risk_score,
+        critical_signals_count=crit_count,
+        warning_signals_count=warn_count,
+        info_signals_count=info_count,
         summary=summary,
         summary_hi=summary_hi,
         signals=signals,
+        evidence=evidence_items,
         provider_statuses=provider_statuses,
         uncertainty_notes=uncertainty_notes,
         uncertainty_notes_hi=uncertainty_notes_hi,
         recommended_actions=recommended_actions,
         recommended_actions_hi=recommended_actions_hi,
-        timestamp=datetime.now(timezone.utc).isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        risk_score=heuristic_index
     )

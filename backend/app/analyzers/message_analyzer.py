@@ -1,7 +1,7 @@
 import re
 from datetime import datetime, timezone
-from typing import List, Tuple
-from app.schemas import AnalysisResult, AnalysisSignal, ProviderStatus
+from typing import List
+from app.schemas import AnalysisResult, AnalysisSignal, ProviderStatus, EvidenceItem
 
 # Curated regex heuristic patterns for message scam detection
 URGENCY_PATTERNS = [
@@ -28,11 +28,9 @@ SUSPICIOUS_CONTACT_PATTERNS = [
     (r"\b(https?://\S+(\.top|\.xyz|\.click|\.online|\.buzz|\.club|\.info|\.cc|\.tk|\.ga|\.ml))\b", "Suspicious / Cheap TLD Link in Message", "संदिग्ध या उच्च-जोखिम डोमेन लिंक", "Message includes a link on a top-level domain frequently associated with automated scam campaigns.", "संदिग्ध शीर्ष-स्तरीय डोमेन का लिंक शामिल है जो अक्सर फ़िशिंग अभियानों में उपयोग किया जाता है।", "CRITICAL"),
 ]
 
-
 def analyze_message_text(text: str, language: str = "en") -> AnalysisResult:
     signals: List[AnalysisSignal] = []
     lowered = text.lower()
-    score_accumulator = 0
 
     all_groups = [
         ("URGENCY", URGENCY_PATTERNS),
@@ -57,12 +55,6 @@ def analyze_message_text(text: str, language: str = "en") -> AnalysisResult:
                         description_hi=desc_hi,
                         severity=severity,
                     ))
-                    if severity == "CRITICAL":
-                        score_accumulator += 32
-                    elif severity == "WARNING":
-                        score_accumulator += 18
-                    else:
-                        score_accumulator += 8
 
     # Check for presence of URL inside message
     url_match = re.search(r"https?://\S+", text)
@@ -76,26 +68,40 @@ def analyze_message_text(text: str, language: str = "en") -> AnalysisResult:
             description_hi="आधिकारिक संस्थान तत्काल कार्रवाई की मांग करने वाले लिंक शायद ही कभी एसएमएस में भेजते हैं।",
             severity="WARNING"
         ))
-        score_accumulator += 15
 
-    # Cap risk score between 0 and 100
-    risk_score = min(score_accumulator, 95)
-    if not signals:
-        risk_score = 10
+    # Tally signal severities
+    crit_count = sum(1 for s in signals if s.severity == "CRITICAL")
+    warn_count = sum(1 for s in signals if s.severity == "WARNING")
+    info_count = sum(1 for s in signals if s.severity == "INFO")
 
-    # Determine calibrated risk level
-    if risk_score >= 60:
+    # Calibrated risk determination based on transparent signal triggers
+    if crit_count >= 2 or (crit_count >= 1 and warn_count >= 1):
         risk_level = "HIGH"
-        summary = "Multiple critical scam indicators detected, such as urgent deadlines, impersonation, or credential requests."
-        summary_hi = "धोखाधड़ी के कई गंभीर संकेत मिले हैं, जैसे समय सीमा का दबाव, संस्थान का प्रतिरूपण या डेटा का अनुरोध।"
-    elif risk_score >= 30:
+        summary = f"High risk scam indicators detected ({crit_count} critical, {warn_count} warning). The message exhibits aggressive urgency, impersonation, or credential requests."
+        summary_hi = f"धोखाधड़ी के उच्च जोखिम संकेत मिले हैं ({crit_count} गंभीर, {warn_count} चेतावनी)। संदेश में जल्दबाजी, संस्थान के प्रतिरूपण या डेटा के अनुरोध के स्पष्ट संकेत हैं।"
+    elif crit_count == 1 or warn_count >= 1:
         risk_level = "MEDIUM"
-        summary = "Suspicious indicators found. Exercise caution and verify the source through independent official channels."
-        summary_hi = "कुछ संदिग्ध संकेत पाए गए हैं। सावधानी बरतें और आधिकारिक माध्यम से स्रोत की पुष्टि करें।"
+        summary = f"Caution recommended ({crit_count} critical, {warn_count} warning signal{'s' if warn_count != 1 else ''}). Notable suspicious indicators discovered."
+        summary_hi = f"सावधानी बरतने की आवश्यकता है ({crit_count} गंभीर, {warn_count} चेतावनी संकेत)। कुछ संदिग्ध संकेत पाए गए हैं।"
     else:
         risk_level = "LOW"
-        summary = "Few or no immediate scam patterns identified. Continue applying standard digital precautions."
-        summary_hi = "धोखाधड़ी के कोई स्पष्ट संकेत नहीं मिले हैं। सामान्य डिजिटल सावधानी बनाए रखें।"
+        summary = "Few or no scam indicators detected in this content. A low signal level is not proof that the message is safe or authentic."
+        summary_hi = "धोखाधड़ी के कोई स्पष्ट संकेत नहीं मिले हैं। कम जोखिम का स्तर यह साबित नहीं करता कि संदेश सुरक्षित या प्रामाणिक है।"
+
+    # Internal heuristic index for backward-compatible test assertions
+    heuristic_index = min((crit_count * 35) + (warn_count * 18) + (info_count * 8), 95)
+    if not signals:
+        heuristic_index = 10
+
+    evidence_items = [
+        EvidenceItem(
+            source_name="Local Heuristic Rule Engine",
+            status="ACTIVE",
+            checked_target="Message Text Content",
+            details=f"Evaluated against urgency, impersonation, credential harvesting, and suspicious contact rules ({len(signals)} matching signals discovered).",
+            details_hi=f"जल्दबाजी, प्रतिरूपण, क्रेडेंशियल चोरी और संदिग्ध संपर्क नियमों के विरुद्ध मूल्यांकन किया गया ({len(signals)} संकेत मिले)।"
+        )
+    ]
 
     uncertainty_notes = [
         "This heuristic analysis inspects message patterns only; it cannot verify personal account balances or official records.",
@@ -122,10 +128,13 @@ def analyze_message_text(text: str, language: str = "en") -> AnalysisResult:
     return AnalysisResult(
         analysis_type="MESSAGE",
         risk_level=risk_level,
-        risk_score=risk_score,
+        critical_signals_count=crit_count,
+        warning_signals_count=warn_count,
+        info_signals_count=info_count,
         summary=summary,
         summary_hi=summary_hi,
         signals=signals,
+        evidence=evidence_items,
         provider_statuses=[
             ProviderStatus(name="Local Heuristic Rule Engine", configured=True, status="ACTIVE"),
         ],
@@ -133,6 +142,6 @@ def analyze_message_text(text: str, language: str = "en") -> AnalysisResult:
         uncertainty_notes_hi=uncertainty_notes_hi,
         recommended_actions=recommended_actions,
         recommended_actions_hi=recommended_actions_hi,
-        timestamp=datetime.now(timezone.utc).isoformat()
+        timestamp=datetime.now(timezone.utc).isoformat(),
+        risk_score=heuristic_index
     )
-

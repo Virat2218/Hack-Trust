@@ -6,6 +6,7 @@ __pycache__/
 
 # Production Builds
 frontend/dist/
+.vitest-cache/
 
 # Local Environment & Secrets
 .env

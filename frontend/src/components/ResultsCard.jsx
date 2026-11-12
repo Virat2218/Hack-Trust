@@ -14,10 +14,13 @@ export const ResultsCard = ({ result, onReset }) => {
 
   const {
     risk_level = 'LOW',
-    risk_score = 0,
+    critical_signals_count = 0,
+    warning_signals_count = 0,
+    info_signals_count = 0,
     summary,
     summary_hi,
     signals = [],
+    evidence = [],
     provider_statuses = [],
     uncertainty_notes = [],
     uncertainty_notes_hi = [],
@@ -68,7 +71,7 @@ export const ResultsCard = ({ result, onReset }) => {
   const RiskIcon = riskDetails.icon;
 
   const handleCopySummary = () => {
-    const textToCopy = `[TrustShield AI Assessment]\nRisk Level: ${riskDetails.label} (Score: ${risk_score}/100)\n\nSummary:\n${displaySummary}\n\nSignals Detected (${signals.length}):\n${signals.map(s => `- ${s.label}: ${s.description}`).join('\n')}\n\nRecommended Steps:\n${recommended_actions.map(a => `- ${a}`).join('\n')}\n\nNote: Decision-support tool only. Verify critical matters directly.`;
+    const textToCopy = `[TrustShield AI Assessment]\nRisk Assessment: ${riskDetails.label}\nSignals Detected: ${critical_signals_count} Critical, ${warning_signals_count} Warning\n\nSummary:\n${displaySummary}\n\nKey Signals:\n${signals.map(s => `- ${s.label}: ${s.description}`).join('\n')}\n\nRecommended Actions:\n${recommended_actions.map(a => `- ${a}`).join('\n')}\n\nNotice: Decision-support tool only. Verify critical matters through official channels.`;
     
     navigator.clipboard.writeText(textToCopy).then(() => {
       setCopied(true);
@@ -98,10 +101,30 @@ export const ResultsCard = ({ result, onReset }) => {
 
           <div className="text-left sm:text-right">
             <span className="text-xs uppercase tracking-wider text-slate-500 font-medium">
-              {t.results.riskScoreLabel}
+              {t.results.signalsCountLabel}
             </span>
-            <div className="text-xl font-bold font-mono text-slate-800">
-              {risk_score}<span className="text-xs text-slate-400 font-normal"> / 100</span>
+            <div className="text-sm font-semibold text-slate-800 mt-0.5">
+              {signals.length === 0 ? (
+                <span className="text-slate-500 font-normal">{lang === 'hi' ? '0 संकेत मिले' : '0 Indicators'}</span>
+              ) : (
+                <div className="flex items-center gap-1.5 justify-start sm:justify-end">
+                  {critical_signals_count > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-xs bg-rose-100 text-rose-800 font-bold border border-rose-200">
+                      {critical_signals_count} {lang === 'hi' ? 'गंभीर' : 'Critical'}
+                    </span>
+                  )}
+                  {warning_signals_count > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-xs bg-amber-100 text-amber-900 font-medium border border-amber-200">
+                      {warning_signals_count} {lang === 'hi' ? 'चेतावनी' : 'Warning'}
+                    </span>
+                  )}
+                  {info_signals_count > 0 && (
+                    <span className="px-1.5 py-0.5 rounded text-xs bg-slate-100 text-slate-700 border border-slate-200 font-normal">
+                      {info_signals_count} {lang === 'hi' ? 'सूचना' : 'Info'}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -123,7 +146,7 @@ export const ResultsCard = ({ result, onReset }) => {
       <ActionGuide actions={recommended_actions} actions_hi={recommended_actions_hi} />
 
       {/* Evidence & Provider Status */}
-      <EvidenceCard providers={provider_statuses} />
+      <EvidenceCard evidence={evidence} providers={provider_statuses} />
 
       {/* Uncertainty & Limitations */}
       <UncertaintyNotice notes={uncertainty_notes} notes_hi={uncertainty_notes_hi} />
@@ -156,7 +179,7 @@ export const ResultsCard = ({ result, onReset }) => {
           <button
             type="button"
             onClick={onReset}
-            className="flex-1 sm:flex-initial inline-flex items-center justify-center space-x-1.5 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500"
+            className="flex-1 sm:flex-initial inline-flex items-center justify-center space-x-1.5 px-4 py-2 bg-slate-900 text-white rounded-lg text-xs font-medium hover:bg-slate-800 focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-500 shadow-xs"
           >
             <RotateCcw className="w-3.5 h-3.5" aria-hidden="true" />
             <span>{t.results.newAnalysis}</span>
@@ -167,4 +190,3 @@ export const ResultsCard = ({ result, onReset }) => {
     </div>
   );
 };
-

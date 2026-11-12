@@ -7,6 +7,9 @@ SCRIPTS = [
     ("SSRF & Provider Integrations", "backend/test_providers.py"),
     ("Bilingual Field Coverage", "backend/test_bilingual.py"),
     ("Edge Cases & Unicode Polish", "backend/test_edge_cases.py"),
+    ("Fact-Check Relevance & Verification", "backend/test_fact_check.py"),
+    ("URL Security & Input Validation", "backend/test_url_security.py"),
+    ("FastAPI HTTP E2E & Middleware", "backend/test_http_e2e.py"),
 ]
 
 def run_suite():
@@ -15,10 +18,11 @@ def run_suite():
     print("=" * 65)
 
     all_passed = True
+    python_bin = sys.executable or "python3"
     for name, script_path in SCRIPTS:
         print(f"\n[RUNNING] {name} ({script_path})...")
         res = subprocess.run(
-            ["backend/venv/bin/python", script_path],
+            [python_bin, script_path],
             env={"PYTHONPATH": "backend"},
             capture_output=True,
             text=True
@@ -34,7 +38,7 @@ def run_suite():
 
     print("\n" + "=" * 65)
     if all_passed:
-        print("RESULT: ALL 5 VERIFICATION SUITES PASSED SUCCESSFULLY (0 FAILURES)")
+        print(f"RESULT: ALL {len(SCRIPTS)} VERIFICATION SUITES PASSED SUCCESSFULLY (0 FAILURES)")
     else:
         print("RESULT: ONE OR MORE VERIFICATION SUITES FAILED")
     print("=" * 65)
@@ -42,4 +46,3 @@ def run_suite():
 
 if __name__ == "__main__":
     sys.exit(run_suite())
-

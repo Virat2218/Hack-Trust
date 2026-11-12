@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react';
-import { X, ShieldCheck, Database, ExternalLink, AlertTriangle, Languages } from 'lucide-react';
+import { X, ShieldCheck, Database, ExternalLink, AlertTriangle, Languages, Cloud, HardDrive } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 export const PrivacyModal = ({ isOpen, onClose }) => {
@@ -10,7 +10,6 @@ export const PrivacyModal = ({ isOpen, onClose }) => {
   useEffect(() => {
     if (!isOpen) return;
 
-    // Focus the close button when the modal opens
     const timer = setTimeout(() => {
       closeButtonRef.current?.focus();
     }, 50);
@@ -21,7 +20,6 @@ export const PrivacyModal = ({ isOpen, onClose }) => {
         return;
       }
 
-      // Trap focus inside modal
       if (e.key === 'Tab' && modalRef.current) {
         const focusableElements = modalRef.current.querySelectorAll(
           'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
@@ -82,6 +80,7 @@ export const PrivacyModal = ({ isOpen, onClose }) => {
         </div>
 
         <div className="mt-4 space-y-3.5 text-sm text-slate-700">
+          {/* Section 1: Zero Storage */}
           <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 flex space-x-3 items-start">
             <Database className="w-5 h-5 text-slate-700 shrink-0 mt-0.5" aria-hidden="true" />
             <div>
@@ -90,6 +89,7 @@ export const PrivacyModal = ({ isOpen, onClose }) => {
             </div>
           </div>
 
+          {/* Section 2: Decision Support */}
           <div className="p-3.5 bg-amber-50/80 rounded-lg border border-amber-200 flex space-x-3 items-start">
             <AlertTriangle className="w-5 h-5 text-amber-800 shrink-0 mt-0.5" aria-hidden="true" />
             <div>
@@ -98,6 +98,7 @@ export const PrivacyModal = ({ isOpen, onClose }) => {
             </div>
           </div>
 
+          {/* Section 3: Safe URL Validation */}
           <div className="p-3.5 bg-sky-50/70 rounded-lg border border-sky-200 flex space-x-3 items-start">
             <ExternalLink className="w-5 h-5 text-sky-700 shrink-0 mt-0.5" aria-hidden="true" />
             <div>
@@ -112,6 +113,24 @@ export const PrivacyModal = ({ isOpen, onClose }) => {
             <div>
               <h3 className="font-semibold text-slate-900">{t.privacyModal.section4Title}</h3>
               <p className="mt-1 text-slate-600 leading-relaxed text-xs sm:text-sm">{t.privacyModal.section4Body}</p>
+            </div>
+          </div>
+
+          {/* Section 5: Local vs. External Provider Data Flow */}
+          <div className="p-3.5 bg-indigo-50/70 rounded-lg border border-indigo-200 flex space-x-3 items-start">
+            <Cloud className="w-5 h-5 text-indigo-700 shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <h3 className="font-semibold text-indigo-950">{t.privacyModal.section5Title}</h3>
+              <p className="mt-1 text-indigo-900 leading-relaxed text-xs sm:text-sm">{t.privacyModal.section5Body}</p>
+            </div>
+          </div>
+
+          {/* Section 6: Browser-Stored Data */}
+          <div className="p-3.5 bg-slate-50 rounded-lg border border-slate-200 flex space-x-3 items-start">
+            <HardDrive className="w-5 h-5 text-slate-700 shrink-0 mt-0.5" aria-hidden="true" />
+            <div>
+              <h3 className="font-semibold text-slate-900">{t.privacyModal.section6Title}</h3>
+              <p className="mt-1 text-slate-600 leading-relaxed text-xs sm:text-sm">{t.privacyModal.section6Body}</p>
             </div>
           </div>
         </div>

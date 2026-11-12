@@ -1,5 +1,5 @@
 import React from 'react';
-import { ShieldCheck, RotateCcw, ArrowRight, Loader2, AlertCircle } from 'lucide-react';
+import { ShieldCheck, RotateCcw, ArrowRight, Loader2, AlertCircle, Cloud } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 
 export const AnalysisInputForm = ({
@@ -10,6 +10,8 @@ export const AnalysisInputForm = ({
   onReset,
   loading,
   validationError,
+  allowExternal,
+  onToggleExternal,
 }) => {
   const { lang, t } = useLanguage();
 
@@ -86,6 +88,30 @@ export const AnalysisInputForm = ({
         </div>
       )}
 
+      {/* Privacy Opt-in for URL and Claim Analysis */}
+      {(activeTab === 'url' || activeTab === 'claim') && (
+        <div className="mt-4 p-3 bg-slate-50 rounded-lg border border-slate-200">
+          <label className="flex items-start space-x-2.5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={allowExternal}
+              onChange={(e) => onToggleExternal(e.target.checked)}
+              disabled={loading}
+              className="mt-0.5 h-4 w-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500 cursor-pointer disabled:cursor-not-allowed"
+            />
+            <div className="text-xs text-slate-700">
+              <span className="font-semibold flex items-center gap-1 text-slate-800">
+                <Cloud className="w-3.5 h-3.5 text-sky-600 inline" aria-hidden="true" />
+                {t.inputs.externalOptInLabel}
+              </span>
+              <p className="text-slate-500 mt-0.5 leading-relaxed">
+                {t.inputs.externalOptInDesc}
+              </p>
+            </div>
+          </label>
+        </div>
+      )}
+
       {/* Controls: Privacy Reassurance, Char Count, Submit Button */}
       <div className="mt-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-100">
         
@@ -127,4 +153,3 @@ export const AnalysisInputForm = ({
     </form>
   );
 };
-
