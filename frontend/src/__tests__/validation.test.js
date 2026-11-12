@@ -64,16 +64,31 @@ describe('Frontend Form Validation Suite', () => {
       }
     });
 
-    it('accepts and normalizes valid domains and URLs', () => {
-      const validCases = [
-        'https://example.com',
-        'http://subdomain.bank.com/login',
-        'google.com'
+    it('rejects unsupported protocols and malformed URLs', () => {
+      const badCases = [
+        'javascript:alert(1)',
+        'file:///etc/passwd',
+        'ftp://files.example.com',
+        'http://',
+        'https://'
       ];
-      for (const url of validCases) {
+      for (const url of badCases) {
         const res = validateUrlInput(url, t);
+        expect(res.valid).toBe(false);
+      }
+    });
+
+    it('accepts and normalizes scheme-less domains and valid URLs', () => {
+      const validCases = [
+        ['https://example.com', 'https://example.com/'],
+        ['http://subdomain.bank.com/login', 'http://subdomain.bank.com/login'],
+        ['google.com', 'https://google.com/']
+      ];
+      for (const [input, expectedNormalized] of validCases) {
+        const res = validateUrlInput(input, t);
         expect(res.valid).toBe(true);
         expect(res.error).toBeNull();
+        expect(res.sanitizedUrl).toBe(expectedNormalized);
       }
     });
   });

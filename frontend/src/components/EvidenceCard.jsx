@@ -26,10 +26,11 @@ export const EvidenceCard = ({ evidence = [], providers = [] }) => {
             {t.results.evidenceStatus.CONSENT_WITHHELD}
           </span>
         );
+      case 'MATCH_FOUND':
       case 'VERIFIED_MATCH':
         return (
           <span className="text-rose-800 font-bold bg-rose-50 px-2 py-0.5 rounded border border-rose-300">
-            {t.results.evidenceStatus.VERIFIED_MATCH}
+            {t.results.evidenceStatus.MATCH_FOUND || t.results.evidenceStatus.VERIFIED_MATCH}
           </span>
         );
       case 'POSSIBLE_MATCH':
@@ -66,7 +67,7 @@ export const EvidenceCard = ({ evidence = [], providers = [] }) => {
   };
 
   const getStatusIcon = (status) => {
-    if (status === 'ACTIVE' || status === 'VERIFIED_MATCH') {
+    if (status === 'ACTIVE' || status === 'MATCH_FOUND' || status === 'VERIFIED_MATCH') {
       return <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />;
     }
     if (status === 'CONSENT_WITHHELD') {

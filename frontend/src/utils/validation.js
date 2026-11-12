@@ -58,9 +58,16 @@ export const validateUrlInput = (rawUrl, t) => {
     return { valid: false, error: t.inputs.invalidUrlError };
   }
 
-  // Reject embedded authority credentials (user:password@)
-  if (/[a-zA-Z0-9+.-]+:\/\/[^/@\s]+@/.test(trimmed) || (!trimmed.includes('://') && /^[^\s/@:]+:[^\s/@:]+@/.test(trimmed))) {
+  // 1. Reject embedded authority credentials (user:password@) before scheme parsing
+  const authorityPart = trimmed.includes('://') ? trimmed.split('://')[1].split('/')[0] : trimmed.split('/')[0];
+  if (authorityPart.includes('@')) {
     return { valid: false, error: t.inputs.credentialsInUrlError };
+  }
+
+  // 2. Reject unsupported protocols (e.g. javascript:, file:, data:, ftp:, etc.)
+  const schemeMatch = trimmed.match(/^([a-zA-Z][a-zA-Z0-9+.-]*):/);
+  if (schemeMatch && !['http', 'https'].includes(schemeMatch[1].toLowerCase())) {
+    return { valid: false, error: t.inputs.invalidUrlError };
   }
 
   let parsed;
@@ -80,7 +87,12 @@ export const validateUrlInput = (rawUrl, t) => {
     return { valid: false, error: t.inputs.invalidUrlError };
   }
 
-  if (isPrivateOrRestrictedHost(parsed.hostname)) {
+  const hostname = (parsed.hostname || '').toLowerCase();
+  if (!hostname || hostname.startsWith('.') || hostname.endsWith('.') || hostname.includes('..')) {
+    return { valid: false, error: t.inputs.invalidUrlError };
+  }
+
+  if (isPrivateOrRestrictedHost(hostname)) {
     return { valid: false, error: t.inputs.ssrfBlockedUrlError };
   }
 

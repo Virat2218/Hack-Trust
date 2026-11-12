@@ -139,16 +139,17 @@ class FactCheckProvider(BaseProvider):
             review_date = review.get("reviewDate", "")
             candidate_text = best_claim.get("text", "")
 
-            # Strong verified match (score >= 0.55)
+            # Strong matching fact-check record (score >= 0.55)
+            # Text similarity indicates high topic overlap with a published review, NOT proof of truth
             if best_score >= 0.55:
                 signals = [
                     AnalysisSignal(
-                        id="fact_check_verified_match",
+                        id="fact_check_matched_record",
                         category="UNVERIFIED_SOURCE",
-                        label=f"Verified Fact-Check: Rated '{rating}' by {publisher}",
-                        label_hi=f"सत्यापित तथ्य-जांच रिपोर्ट: {publisher} द्वारा '{rating}' रेटेड",
-                        description=f"A matching claim ('{candidate_text[:120]}...') was investigated by {publisher} with conclusion: '{rating}'. Review: {review_url}",
-                        description_hi=f"इस दावे ('{candidate_text[:120]}...') की {publisher} द्वारा स्वतंत्र जांच की गई है। निष्कर्ष: '{rating}'।",
+                        label=f"Matching Fact-Check Record: Rated '{rating}' by {publisher}",
+                        label_hi=f"संबंधित तथ्य-जांच रिकॉर्ड: {publisher} द्वारा '{rating}' रेटेड",
+                        description=f"A matching fact-check article by {publisher} investigated a claim on this topic ('{candidate_text[:120]}...') and recorded rating: '{rating}'. Review: {review_url}. Note: TrustShield cites this published record; text similarity does not prove claims are identical.",
+                        description_hi=f"{publisher} द्वारा इस विषय ('{candidate_text[:120]}...') पर प्रकाशित समीक्षा में निष्कर्ष दर्ज है: '{rating}'। संदर्भ लिंक: {review_url}। ध्यान दें: ट्रस्टशील्ड इस प्रकाशित रिकॉर्ड को उद्धृत करता है; समानता से दावा सिद्ध नहीं होता।",
                         severity="CRITICAL" if any(w in rating.lower() for w in ["false", "fake", "hoax", "misleading", "incorrect", "गलत", "झूठ"]) else "WARNING"
                     )
                 ]
@@ -156,8 +157,8 @@ class FactCheckProvider(BaseProvider):
                     provider_status=ProviderStatus(
                         name=self.name,
                         configured=True,
-                        status="VERIFIED_MATCH",
-                        details=f"High-confidence match ({round(best_score*100)}% lexical overlap) with claim investigated by {publisher}."
+                        status="MATCH_FOUND",
+                        details=f"Matching published fact-check article found ({round(best_score*100)}% lexical similarity) from {publisher}."
                     ),
                     signals=signals,
                     additional_score=45,
@@ -167,7 +168,7 @@ class FactCheckProvider(BaseProvider):
                         "review_url": review_url,
                         "review_date": review_date,
                         "reviewed_claim": candidate_text,
-                        "match_confidence": "EXACT"
+                        "match_confidence": "STRONG_OVERLAP"
                     }
                 )
 
@@ -177,9 +178,9 @@ class FactCheckProvider(BaseProvider):
                 AnalysisSignal(
                     id="fact_check_possible_match",
                     category="UNVERIFIED_SOURCE",
-                    label=f"Possible Related Fact-Check: '{rating}' by {publisher} (Requires Review)",
-                    label_hi=f"संभावित संबंधित तथ्य-जांच: '{rating}' by {publisher} (समीक्षा आवश्यक)",
-                    description=f"Found a potentially related claim investigated by {publisher}: '{candidate_text[:120]}...'. Check the review link to determine if it addresses your specific question.",
+                    label=f"Possible Related Fact-Check: Rated '{rating}' by {publisher} (Requires Review)",
+                    label_hi=f"संभावित संबंधित समीक्षा: {publisher} द्वारा '{rating}' (समीक्षा आवश्यक)",
+                    description=f"Found a potentially related article investigated by {publisher}: '{candidate_text[:120]}...'. Check the review link to determine if it addresses your specific question.",
                     description_hi=f"{publisher} द्वारा जांची गई एक संभावित संबंधित रिपोर्ट मिली: '{candidate_text[:120]}...'। पुष्टि के लिए लिंक देखें।",
                     severity="WARNING"
                 )
@@ -189,7 +190,7 @@ class FactCheckProvider(BaseProvider):
                     name=self.name,
                     configured=True,
                     status="POSSIBLE_MATCH",
-                    details=f"Partial match found ({round(best_score*100)}% overlap). Requires manual verification by the user."
+                    details=f"Partial topic overlap ({round(best_score*100)}%). User review required to determine relevance."
                 ),
                 signals=signals,
                 additional_score=20,
@@ -199,7 +200,7 @@ class FactCheckProvider(BaseProvider):
                     "review_url": review_url,
                     "review_date": review_date,
                     "reviewed_claim": candidate_text,
-                    "match_confidence": "POSSIBLE"
+                    "match_confidence": "POSSIBLE_OVERLAP"
                 }
             )
 
@@ -214,7 +215,7 @@ class FactCheckProvider(BaseProvider):
                 )
             )
         except Exception as e:
-            logger.error(f"Error querying Fact Check API: {str(e)}")
+            logger.error(f"Fact Check API error [type={type(e).__name__}]")
             return ProviderCheckResponse(
                 provider_status=ProviderStatus(
                     name=self.name,

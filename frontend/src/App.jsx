@@ -19,6 +19,7 @@ export const AppContent = () => {
   const privacyTriggerRef = useRef(null);
   const resultsContainerRef = useRef(null);
   const abortControllerRef = useRef(null);
+  const activeRequestIdRef = useRef(0);
 
   // Form states
   const [inputValue, setInputValue] = useState('');
@@ -43,12 +44,14 @@ export const AppContent = () => {
   }, []);
 
   const handleTabChange = (tabId) => {
-    // 1. Abort any active in-flight request to prevent race conditions & stale results
+    // 1. Abort any active in-flight request and invalidate pending promises
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    activeRequestIdRef.current++;
 
     setActiveTab(tabId);
     setInputValue('');
+    setAllowExternal(false); // Reset external provider consent per analysis category
     setValidationError(null);
     setServerError(null);
     setResult(null);
@@ -56,10 +59,13 @@ export const AppContent = () => {
   };
 
   const handleReset = () => {
+    // Abort active in-flight request and invalidate pending promises
     abortControllerRef.current?.abort();
     abortControllerRef.current = null;
+    activeRequestIdRef.current++;
 
     setInputValue('');
+    setAllowExternal(false); // Reset external provider consent on reset
     setValidationError(null);
     setServerError(null);
     setResult(null);
@@ -121,10 +127,11 @@ export const AppContent = () => {
 
     if (!isValid) return;
 
-    // 2. Abort prior in-flight request and instantiate new AbortController
+    // 2. Abort prior in-flight request and register unique request identity
     abortControllerRef.current?.abort();
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    const currentRequestId = ++activeRequestIdRef.current;
 
     setLoading(true);
     try {
@@ -149,24 +156,32 @@ export const AppContent = () => {
       }
 
       const data = await response.json();
-      setResult(data);
 
-      // Smoothly scroll and focus results for keyboard & screen-reader users
-      setTimeout(() => {
-        resultsContainerRef.current?.focus();
-      }, 100);
-    } catch (err) {
-      if (err.name === 'AbortError') {
-        // Fetch was aborted cleanly by user action (tab switch or reset); do not set error state
-        return;
+      // Guard: Only commit results if this request is still active and unaborted
+      if (activeRequestIdRef.current === currentRequestId && !controller.signal.aborted) {
+        setResult(data);
+
+        // Smoothly scroll and focus results for keyboard & screen-reader users
+        setTimeout(() => {
+          resultsContainerRef.current?.focus();
+        }, 100);
       }
-      setServerError(
-        lang === 'hi'
-          ? `विश्लेषण सेवा से संपर्क नहीं हो सका (${err.message})। कृपया कनेक्शन जांचें।`
-          : `Unable to connect to analysis service (${err.message}). Please check connection.`
-      );
+    } catch (err) {
+      // Guard: Only display error if this request is still active and unaborted
+      if (activeRequestIdRef.current === currentRequestId && !controller.signal.aborted) {
+        if (err.name !== 'AbortError') {
+          setServerError(
+            lang === 'hi'
+              ? `विश्लेषण सेवा से संपर्क नहीं हो सका (${err.message})। कृपया कनेक्शन जांचें।`
+              : `Unable to connect to analysis service (${err.message}). Please check connection.`
+          );
+        }
+      }
     } finally {
-      setLoading(false);
+      // Guard: Only clear loading indicator if this request is still the active one
+      if (activeRequestIdRef.current === currentRequestId) {
+        setLoading(false);
+      }
     }
   };
 

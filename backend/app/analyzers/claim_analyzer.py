@@ -158,6 +158,5 @@ def analyze_claim_text(
         uncertainty_notes_hi=uncertainty_notes_hi,
         recommended_actions=recommended_actions,
         recommended_actions_hi=recommended_actions_hi,
-        timestamp=datetime.now(timezone.utc).isoformat(),
-        risk_score=heuristic_index
+        timestamp=datetime.now(timezone.utc).isoformat()
     )

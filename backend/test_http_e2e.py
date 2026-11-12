@@ -39,6 +39,7 @@ class TestTrustShieldHttpE2E(unittest.TestCase):
         data = response.json()
         self.assertEqual(data["risk_level"], "HIGH")
         self.assertGreaterEqual(data["critical_signals_count"], 1)
+        self.assertNotIn("risk_score", data)
         self.assertIn("summary", data)
         self.assertIn("summary_hi", data)
         self.assertIn("uncertainty_notes", data)
@@ -176,8 +177,8 @@ class TestTrustShieldHttpE2E(unittest.TestCase):
         self.assertEqual(response.status_code, 200)
         data = response.json()
         fc_evidence = [e for e in data["evidence"] if "Fact Check" in e["source_name"]][0]
-        self.assertEqual(fc_evidence["status"], "VERIFIED_MATCH")
-        self.assertEqual(fc_evidence["match_confidence"], "EXACT")
+        self.assertEqual(fc_evidence["status"], "MATCH_FOUND")
+        self.assertEqual(fc_evidence["match_confidence"], "STRONG_OVERLAP")
         self.assertEqual(fc_evidence["publisher"], "Health Feedback")
         self.assertEqual(fc_evidence["textual_rating"], "False")
 

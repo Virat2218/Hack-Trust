@@ -11,7 +11,7 @@ def test_message_analyzer():
     assert isinstance(res, AnalysisResult)
     assert res.risk_level == "HIGH", f"Expected HIGH, got {res.risk_level}"
     assert len(res.signals) >= 3, f"Expected at least 3 signals, got {len(res.signals)}"
-    assert res.risk_score >= 60
+    assert res.critical_signals_count >= 1
 
     # Test benign message
     benign_msg = "Hey Alok, are we still meeting for lunch tomorrow at 1 PM?"

@@ -37,7 +37,7 @@ export const AnalysisInputForm = ({
   };
 
   return (
-    <form onSubmit={handleSubmit} className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
+    <form onSubmit={handleSubmit} noValidate className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs">
       
       {/* Header with Title and Reset */}
       <div className="flex items-center justify-between mb-3">
@@ -61,7 +61,11 @@ export const AnalysisInputForm = ({
       {activeTab === 'url' ? (
         <input
           id="analysis-input-field"
-          type="url"
+          type="text"
+          inputMode="url"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck="false"
           value={value}
           onChange={(e) => onChange(e.target.value)}
           placeholder={placeholder}

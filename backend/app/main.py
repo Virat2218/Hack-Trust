@@ -86,7 +86,7 @@ async def security_and_privacy_middleware(request: Request, call_next):
     active_timestamps = [ts for ts in timestamps if now - ts < RATE_LIMIT_WINDOW]
     
     if len(active_timestamps) >= MAX_REQUESTS_PER_WINDOW:
-        logger.warning(f"Rate limit exceeded for client hash {client_hash[:8]}...")
+        logger.warning("Rate limit exceeded for incoming analysis request.")
         return Response(
             content='{"detail":"Too many analysis requests. Please wait a moment before trying again."}',
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,

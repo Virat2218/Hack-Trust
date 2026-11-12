@@ -17,6 +17,7 @@ ProviderExecutionStatus = Literal[
     "CONSENT_WITHHELD",
     "NO_MATCH",
     "POSSIBLE_MATCH",
+    "MATCH_FOUND",
     "VERIFIED_MATCH",
     "TIMEOUT",
     "ERROR",
@@ -49,12 +50,12 @@ class EvidenceItem(BaseModel):
     review_url: Optional[str] = None
     review_date: Optional[str] = None
     textual_rating: Optional[str] = None
-    match_confidence: Optional[Literal["EXACT", "POSSIBLE", "NONE"]] = None
+    match_confidence: Optional[Literal["STRONG_OVERLAP", "POSSIBLE_OVERLAP", "NONE", "EXACT", "POSSIBLE"]] = None
 
 class AnalysisResult(BaseModel):
     analysis_type: Literal["MESSAGE", "URL", "CLAIM"]
     risk_level: RiskLevel
-    # Transparent indicator counts (replacing pseudo-probability score)
+    # Transparent indicator counts
     critical_signals_count: int = 0
     warning_signals_count: int = 0
     info_signals_count: int = 0
@@ -68,8 +69,6 @@ class AnalysisResult(BaseModel):
     recommended_actions: List[str] = []
     recommended_actions_hi: List[str] = []
     timestamp: str
-    # Internal uncalibrated heuristic index (for compatibility; not an accuracy/probability metric)
-    risk_score: Optional[int] = None
 
 # Request Schemas
 class MessageAnalyzeRequest(BaseModel):

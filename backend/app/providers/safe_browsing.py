@@ -118,7 +118,7 @@ class SafeBrowsingProvider(BaseProvider):
                 )
             )
         except Exception as e:
-            logger.error(f"Error querying Safe Browsing API: {str(e)}")
+            logger.error(f"Safe Browsing API error [type={type(e).__name__}]")
             return ProviderCheckResponse(
                 provider_status=ProviderStatus(
                     name=self.name,

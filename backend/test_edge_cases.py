@@ -35,7 +35,7 @@ def test_edge_case_benign_content():
     benign = "Hello Team, please find attached the meeting minutes from our morning discussion."
     res = analyze_message_text(benign, "en")
     assert res.risk_level == "LOW"
-    assert res.risk_score <= 25
+    assert res.critical_signals_count == 0
     print("✓ Benign content low risk score verified.")
 
 if __name__ == "__main__":
