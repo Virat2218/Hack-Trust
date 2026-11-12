@@ -52,7 +52,7 @@ TrustShield AI / Hack-Trust
 | **Safe URL Assessment** | **Implemented & Active** | Enforces strict SSRF defense (blocking loopback, private RFC1918 ranges, cloud metadata), detects Punycode spoofing, IP hostnames, high-risk TLDs, and brand mimicry. Strictly rejects embedded authority credentials (`user:password@`). |
 | **Server-Side Fetching Invariant** | **Implemented & Active** | Server-side web scraping and target URL fetching are **deliberately disabled** to eliminate SSRF exploit vectors and remote code execution hazards. |
 | **Transparent Indicator Scoring** | **Implemented & Active** | Replaced arbitrary percentage scores with transparent indicator counts (`Critical`, `Warning`, `Info`) and clear categorical levels (`LOW`, `MEDIUM`, `HIGH`). A low score never implies verification or guaranteed safety. |
-| **News Claim Verification** | **Implemented & Active** | Lexical Jaccard relevance matching prevents blind attribution. Candidate fact-checks below 0.25 similarity are rejected as `NO_MATCH`; 0.25–0.55 are labeled `POSSIBLE_MATCH` requiring review; >=0.55 are presented as `VERIFIED_MATCH` with publisher credit. |
+| **News Claim Verification** | **Implemented & Active** | Lexical Jaccard relevance matching prevents blind attribution. Candidate fact-checks below 0.25 similarity are rejected as `NO_MATCH`; 0.25–0.55 are labeled `POSSIBLE_MATCH` requiring review; >=0.55 are presented as `MATCH_FOUND` with clear publisher attribution. Text similarity indicates overlap with an indexed claim record, not independent mathematical verification of truth. |
 | **External Provider Opt-In** | **Implemented & Active** | External reputation queries (Google Safe Browsing & Google Fact Check) require explicit user opt-in before submission. When unselected, analysis runs 100% locally with `CONSENT_WITHHELD` status. |
 | **Bilingual Support (EN / HI)** | **Implemented & Active** | Complete interface, forms, error alerts, severity badges, modal disclosures, and analysis outputs in both English and Hindi. |
 | **Privacy & Zero Storage** | **Implemented & Active** | Zero database persistence. All inputs are analyzed strictly in transient RAM. User text, URLs, and exception bodies are never logged. |
@@ -68,7 +68,7 @@ TrustShield AI / Hack-Trust
 
 Ensure you have the following installed on your machine:
 - **Python**: v3.10, v3.11, or v3.12
-- **Node.js**: v20.0.0 or higher (v22+ LTS recommended) with `npm`
+- **Node.js**: v22.0.0 or higher (v22+ LTS recommended; required by locked dependencies) with `npm`
 - **Docker & Docker Compose** (optional, for containerized execution)
 
 ---
@@ -171,7 +171,7 @@ This runs **8 verification suites**:
 3. `backend/test_providers.py` — 13 SSRF attack vector blocks and honest unconfigured provider fallbacks.
 4. `backend/test_bilingual.py` — 100% Hindi field coverage across all output models.
 5. `backend/test_edge_cases.py` — URL casing, Devanagari punctuation (danda), and benign low-risk content.
-6. `backend/test_fact_check.py` — Jaccard lexical relevance scoring and claim match gating.
+6. `backend/test_fact_check.py` — Jaccard lexical relevance scoring, contradiction boundaries, publisher attribution, and provider credential log protection.
 7. `backend/test_url_security.py` — Rejection of authority credentials (`user:pass@`), unsupported schemes, and malformed URLs.
 8. `backend/test_http_e2e.py` — End-to-end FastAPI HTTP client tests, middleware security headers, rate limiting (429 Retry-After), and mocked external providers.
 
