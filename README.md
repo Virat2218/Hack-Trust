@@ -68,7 +68,7 @@ TrustShield AI / Hack-Trust
 
 Ensure you have the following installed on your machine:
 - **Python**: v3.10, v3.11, or v3.12
-- **Node.js**: v18.0.0 or higher (v20+ recommended) with `npm`
+- **Node.js**: v20.0.0 or higher (v22+ LTS recommended) with `npm`
 - **Docker & Docker Compose** (optional, for containerized execution)
 
 ---

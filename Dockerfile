@@ -1,7 +1,7 @@
 # Multi-stage production build for TrustShield AI
 
 # Stage 1: Build the React frontend
-FROM node:20-alpine AS frontend-builder
+FROM node:22-alpine AS frontend-builder
 WORKDIR /build
 COPY frontend/package*.json ./
 RUN npm ci
